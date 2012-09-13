@@ -1,0 +1,93 @@
+
+AR   := ar
+CC   := gcc
+CXX  := g++
+MAKE := make
+
+MAKEFLAGS += -rR --no-print-directory
+
+ifeq ("$(origin V)", "command line")
+  BUILD_VERBOSE = $(V)
+endif
+ifndef BUILD_VERBOSE
+  BUILD_VERBOSE = 0
+endif
+
+ifeq ($(BUILD_VERBOSE),1)
+  quiet =
+  Q =
+else
+  quiet=quiet_
+  Q = @
+endif
+
+ifneq ($(findstring s,$(MAKEFLAGS)),)
+    quiet=silent_
+endif
+
+comma   := ,
+squote  := '
+empty   :=
+space   := $(empty) $(empty)
+
+# Escape single quote for use in echo statements
+escsq = $(subst $(squote),'\$(squote)',$1)
+
+try-run = $(shell set -e;               \
+        TMP="$(TMPOUT).$$$$.tmp";       \
+        TMPO="$(TMPOUT).$$$$.o";        \
+        if ($(1)) >/dev/null 2>&1;      \
+        then echo "$(2)";               \
+        else echo "$(3)";               \
+        fi;                             \
+        rm -f "$$TMP" "$$TMPO")
+
+cc-option = $(call try-run,\
+        $(CC) $(BUILD_CPPFLAGS) $(BUILD_CFLAGS) $(1) -c -xc /dev/null -o "$$TMP",$(1),$(2))
+
+cc-option-yn = $(call try-run,\
+        $(CC) $(BUILD_CPPFLAGS) $(BUILD_CFLAGS) $(1) -c -xc /dev/null -o "$$TMP",y,n)
+
+cc-ldoption = $(call try-run,\
+        $(CC) $(1) -nostdlib -xc /dev/null -o "$$TMP",$(1),$(2))
+
+echo-cmd = $(if $($(quiet)cmd_$(1)),\
+        echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
+
+cmd = @$(echo-cmd) $(cmd_$(1))
+
+quiet_cmd_cc_o_c = CC      $@
+      cmd_cc_o_c = $(CC) $(CFLAGS) -c -o $@ $<
+
+quiet_cmd_cc_o_cpp = CXX     $@
+      cmd_cc_o_cpp = $(CXX) $(CXXFLAGS) -c -o $@ $<
+
+quiet_cmd_archive = AR      $@
+      cmd_archive = $(AR) -crus -o $@ $^ && ranlib $@
+
+quiet_cmd_simple = LINK    $@
+      cmd_simple = $(CC) $(CFLAGS) -o $@ $^ ${LDFLAGS}
+
+quiet_cmd_make = MAKE    $@
+      cmd_make = ${MAKE} -C $(dir $@)
+
+#-O2
+BUILD_CFLAGS  := -O2  -pipe -Wall -Wextra        \
+                 -D_GNU_SOURCE -pthread            \
+                 -Wmissing-field-initializers      \
+                 -Wswitch-enum -Wswitch-default    \
+                 -Wformat-security -Wfloat-equal   \
+                 -Winline -Wshadow -Wpointer-arith
+
+BUILD_LDFLAGS := -Wl,--warn-common
+
+.c.o:
+	$(call cmd,cc_o_c)
+
+.cpp.o:
+	$(call cmd,cc_o_cpp)
+
+.cc.o:
+	$(call cmd,cc_o_cpp)
+
+.SUFFIXES: .c .cpp .cc .o
